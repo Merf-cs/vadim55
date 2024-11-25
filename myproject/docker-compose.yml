@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  web:
+    build:
+      context: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+       - ./sales_data:/app/sales_data
+    environment:
+      - DJANGO_SETTINGS_MODULE=myproject.settings

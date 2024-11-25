@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Список данных</title>
+</head>
+<body>
+    <h1>Список файлов и данных</h1>
+    {% if files %}
+        <h2>Файлы:</h2>
+        <ul>
+            {% for file in files %}
+                <li>{{ file }}</li>
+            {% endfor %}
+        </ul>
+
+        <h2>Данные:</h2>
+        {% for sale in sales %}
+            <h3>{{ sale.type }}</h3>
+            <pre>{{ sale.data|safe }}</pre>
+        {% endfor %}
+    {% else %}
+        <p>Файлы отсутствуют.</p>
+    {% endif %}
+</body>
+</html>
