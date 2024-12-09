@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Редактирование записи</title>
+</head>
+<body>
+    <h1>Редактирование записи</h1>
+    <form method="post">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit">Сохранить изменения</button>
+    </form>
+    <a href="{% url 'sales_list' %}">Отмена</a>
+</body>
+</html>

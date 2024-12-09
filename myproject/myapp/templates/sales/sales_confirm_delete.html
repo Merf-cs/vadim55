@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Удаление записи</title>
+</head>
+<body>
+    <h1>Вы уверены, что хотите удалить эту запись?</h1>
+    <p>{{ record.product }} - {{ record.date }}</p>
+    <form method="post">
+        {% csrf_token %}
+        <button type="submit">Удалить</button>
+    </form>
+    <a href="{% url 'sales_list' %}">Отмена</a>
+</body>
+</html>

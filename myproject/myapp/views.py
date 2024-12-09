@@ -1,136 +1,128 @@
+from django.shortcuts import render, redirect
+from django.db import IntegrityError
+from .forms import SalesForm
+from .models import SalesRecord
 import os
 import json
 import xml.etree.ElementTree as ET
-from django.conf import settings
-from django.shortcuts import render, redirect
-from django.core.files.storage import default_storage
-from .forms import SalesForm, UploadFileForm
 
+def save_to_database(data):
+    try:
+        SalesRecord.objects.create(**data)
+        return "Данные успешно сохранены в базу данных."
+    except IntegrityError:
+        return "Запись с такими данными уже существует."
 
-# Функция сохранения данных в JSON и XML
-def save_sales_data(data):
+def save_to_file(data, format):
     folder = os.path.join(settings.BASE_DIR, 'sales_data')
     os.makedirs(folder, exist_ok=True)
 
-    # путь JSON
-    json_path = os.path.join(folder, 'sales.json')
-
-    # создаём файл, если его нет
-    if not os.path.exists(json_path):
-        with open(json_path, 'w') as f:
-            json.dump([], f)
-    try:
-        with open(json_path, 'r') as f:
-            try:
-                sales = json.load(f)
-                if not isinstance(sales, list):  # Если данные не список, сбрасываем
-                     sales = []
-            except json.JSONDecodeError:
-                sales =[] # Если файл повреждён
-    
-        # Добавляем новые данные
-        sales.append(data)
-
-        # Записываем данные обратно в файл
-        with open(json_path, 'w') as f:
+    if format == 'json':
+        file_path = os.path.join(folder, 'sales.json')
+        if not os.path.exists(file_path):
+            with open(file_path, 'w') as f:
+                json.dump([], f)
+        with open(file_path, 'r+') as f:
+            sales = json.load(f)
+            sales.append(data)
+            f.seek(0)
             json.dump(sales, f, indent=4, ensure_ascii=False)
+        return "Данные успешно сохранены в файл JSON."
     
-    except Exception as e:
-        print (f"Ошибка при работе с файлом JSON: {e}")
+    elif format == 'xml':
+        file_path = os.path.join(folder, 'sales.xml')
+        if os.path.exists(file_path):
+            tree = ET.parse(file_path)
+            root = tree.getroot()
+        else:
+            root = ET.Element('Sales')
+            tree = ET.ElementTree(root)
 
-    # XML
-    xml_path = os.path.join(folder, 'sales.xml')
-    if os.path.exists(xml_path):
-        tree = ET.parse(xml_path)
-        root = tree.getroot()
-    else:
-        root = ET.Element('Sales')
-        tree = ET.ElementTree(root)
+        sale = ET.Element('Sale')
+        for key, value in data.items():
+            ET.SubElement(sale, key).text = str(value)
+        root.append(sale)
+        tree.write(file_path, encoding='utf-8', xml_declaration=True)
+        return "Данные успешно сохранены в файл XML."
 
-    sale = ET.Element('Sale')
-    for key, value in data.items():
-        ET.SubElement(sale, key).text = str(value)
-    root.append(sale)
-    tree.write(xml_path, encoding='utf-8', xml_declaration=True)
-
-
-# Форма добавления данных
 def sales_form(request):
     if request.method == 'POST':
         form = SalesForm(request.POST)
         if form.is_valid():
-            save_sales_data(form.cleaned_data)
-            return redirect('sales_list')
+            data = {
+                'date': form.cleaned_data['date'],
+                'product': form.cleaned_data['product'],
+                'quantity': form.cleaned_data['quantity'],
+                'price': form.cleaned_data['price'],
+            }
+            storage = form.cleaned_data['storage']
+            if storage == 'file':
+                message = save_to_file(data, 'json')  # Меняйте 'json' на 'xml', если нужно
+            elif storage == 'database':
+                message = save_to_database(data)
+            return render(request, 'sales/success.html', {'message': message})
     else:
         form = SalesForm()
     return render(request, 'sales/sales_form.html', {'form': form})
 
-
-# Функция загрузки файлов
-def upload_file(request):
-    if request.method == 'POST':
-        form = UploadFileForm(request.POST, request.FILES)
-        if form.is_valid():
-            file = request.FILES['file']
-            folder = os.path.join(settings.BASE_DIR, 'sales_data')
-            os.makedirs(folder, exist_ok=True)
-            file_path = os.path.join(folder, file.name)
-
-            with default_storage.open(file_path, 'wb+') as destination:
-                for chunk in file.chunks():
-                    destination.write(chunk)
-
-            # Валидация загруженного файла
-            if file.name.endswith('.json'):
-                try:
-                    with open(file_path, 'r') as f:
-                        json.load(f)
-                except json.JSONDecodeError:
-                    os.remove(file_path)
-                    return render(request, 'sales/upload_file.html', {'form': form, 'error': 'Невалидный JSON-файл!'})
-            elif file.name.endswith('.xml'):
-                try:
-                    ET.parse(file_path)
-                except ET.ParseError:
-                    os.remove(file_path)
-                    return render(request, 'sales/upload_file.html', {'form': form, 'error': 'Невалидный XML-файл!'})
-
-            return redirect('sales_list')
-    else:
-        form = UploadFileForm()
-    return render(request, 'sales/upload_file.html', {'form': form})
-
-
-# Вывод списка данных
 def sales_list(request):
-    folder = os.path.join(settings.BASE_DIR, 'sales_data')
-    files = os.listdir(folder) if os.path.exists(folder) else []
-    sales = []
+    # Определите источник: файлы или база
+    source = request.GET.get('source', 'database')  # По умолчанию берём данные из базы
 
-    for file_name in files:
-        file_path = os.path.join(folder, file_name)
-        
-        if file_name.endswith('.json'):  # Если файл JSON
-            try:
-                with open(file_path, 'r') as f:
-                    sales.append({'type': 'JSON', 'data': json.load(f)})
-            except json.JSONDecodeError:  # Обработка повреждённого файла
-                os.remove(file_path)  # Удаляем файл
-                sales.append({'type': 'JSON', 'data': 'Файл был удалён из-за повреждения.'})
-        
-        elif file_name.endswith('.xml'):  # Если файл XML
-            try:
-                tree = ET.parse(file_path)
-                root = tree.getroot()
-                sales.append({
-                    'type': 'XML',
-                    'data': [
-                        {child.tag: child.text for child in sale}
-                        for sale in root.findall('Sale')
-                    ]
-                })
-            except ET.ParseError:  # Обработка повреждённого файла
-                os.remove(file_path)  # Удаляем файл
-                sales.append({'type': 'XML', 'data': 'Файл был удалён из-за повреждения.'})
+    if source == 'file':
+        folder = os.path.join(settings.BASE_DIR, 'sales_data')
+        file_path = os.path.join(folder, 'sales.json')
+        data = []
+        if os.path.exists(file_path):
+            with open(file_path, 'r') as f:
+                data = json.load(f)
+    elif source == 'database':
+        data = SalesRecord.objects.all()
 
-    return render(request, 'sales/sales_list.html', {'sales': sales, 'files': files})
+    return render(request, 'sales/sales_list.html', {'data': data, 'source': source})
+
+from django.http import JsonResponse
+
+def sales_search(request):
+    query = request.GET.get('q', '')
+    results = SalesRecord.objects.filter(product__icontains=query).values('product', 'date')
+    return JsonResponse(list(results), safe=False)
+
+
+def sales_edit(request, pk):
+    record = get_object_or_404(SalesRecord, pk=pk)
+
+    if request.method == 'POST':
+        form = SalesForm(request.POST, initial={
+            'date': record.date,
+            'product': record.product,
+            'quantity': record.quantity,
+            'price': record.price
+        })
+        if form.is_valid():
+            # Обновляем данные в записи
+            record.date = form.cleaned_data['date']
+            record.product = form.cleaned_data['product']
+            record.quantity = form.cleaned_data['quantity']
+            record.price = form.cleaned_data['price']
+            record.save()
+            return HttpResponseRedirect(reverse('sales_list'))
+    else:
+        # Инициализируем форму данными из записи
+        form = SalesForm(initial={
+            'date': record.date,
+            'product': record.product,
+            'quantity': record.quantity,
+            'price': record.price
+        })
+
+    return render(request, 'sales/sales_edit.html', {'form': form, 'record': record})
+
+def sales_delete(request, pk):
+    record = get_object_or_404(SalesRecord, pk=pk)
+
+    if request.method == 'POST':
+        record.delete()
+        return HttpResponseRedirect(reverse('sales_list'))
+
+    return render(request, 'sales/sales_confirm_delete.html', {'record': record})

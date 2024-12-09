@@ -5,6 +5,19 @@
 </head>
 <body>
     <h1>Список файлов и данных</h1>
+
+    <ul>
+        {% for record in data %}
+            <li>
+                {{ record.product }} - {{ record.date }} 
+                <a href="{% url 'sales_edit' record.id %}">Редактировать</a>
+                <a href="{% url 'sales_delete' record.id %}">Удалить</a>
+            </li>
+        {% endfor %}
+    </ul>
+    <a href="{% url 'sales_form' %}">Добавить запись</a>
+
+
     {% if files %}
         <h2>Файлы:</h2>
         <ul>
@@ -21,5 +34,32 @@
     {% else %}
         <p>Файлы отсутствуют.</p>
     {% endif %}
+
+
+
+    <input type="text" id="search" placeholder="Поиск...">
+<ul id="results">
+    {% for record in data %}
+        <li>{{ record.product }} - {{ record.date }}</li>
+    {% endfor %}
+</ul>
+
+<script>
+document.getElementById('search').addEventListener('input', function() {
+    const query = this.value;
+    fetch(`/sales/search/?q=${query}`)
+        .then(response => response.json())
+        .then(data => {
+            const results = document.getElementById('results');
+            results.innerHTML = '';
+            data.forEach(item => {
+                const li = document.createElement('li');
+                li.textContent = `${item.product} - ${item.date}`;
+                results.appendChild(li);
+            });
+        });
+});
+</script>
+
 </body>
 </html>
